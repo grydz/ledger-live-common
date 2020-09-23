@@ -9,9 +9,13 @@ const SET_PARTNER_KEY_COMMAND: number = 0x04;
 const CHECK_PARTNER_COMMAND: number = 0x05;
 const PROCESS_TRANSACTION_RESPONSE: number = 0x06;
 const CHECK_TRANSACTION_SIGNATURE: number = 0x07;
-const CHECK_PAYOUT_ADDRESS: number = 0x08;
-const CHECK_REFUND_ADDRESS: number = 0x09;
+const CHECK_PAYOUT_ADDRESS: number = 0x08;  // CHECK_ASSET_IN for SELL
+const CHECK_REFUND_ADDRESS: number = 0x09;  // unused for SELL
 const SIGN_COIN_TRANSACTION: number = 0x0a;
+
+type TransactionType =
+  0x00 | // SWAP
+  0x01   // SELL
 
 const maybeThrowProtocolError = (result: Buffer): void => {
   invariant(result.length >= 2, "SwapTransport: Unexpected result length");
@@ -40,26 +44,31 @@ export default class Swap {
     this.transport = transport;
   }
 
-  async startNewTransaction(): Promise<string> {
+  async startNewTransaction(transactionType: TransactionType): Promise<string | Buffer> {
     let result: Buffer = await this.transport.send(
       0xe0,
       START_NEW_TRANSACTION_COMMAND,
       0x00,
-      0x00,
+      transactionType,
       Buffer.alloc(0),
       this.allowedStatuses
     );
     maybeThrowProtocolError(result);
 
-    return result.toString("ascii", 0, 10);
+    // SELL
+    if (transactionType == 0x01) {
+      return result.subarray(0, 32);
+    }
+
+  return result.toString("ascii", 0, 10);
   }
 
-  async setPartnerKey(partnerNameAndPublicKey: Buffer): Promise<void> {
+  async setPartnerKey(transactionType: TransactionType, partnerNameAndPublicKey: Buffer): Promise<void> {
     let result: Buffer = await this.transport.send(
       0xe0,
       SET_PARTNER_KEY_COMMAND,
       0x00,
-      0x00,
+      transactionType,
       partnerNameAndPublicKey,
       this.allowedStatuses
     );
@@ -67,12 +76,12 @@ export default class Swap {
     maybeThrowProtocolError(result);
   }
 
-  async checkPartner(signatureOfPartnerData: Buffer): Promise<void> {
+  async checkPartner(transactionType: TransactionType, signatureOfPartnerData: Buffer): Promise<void> {
     let result: Buffer = await this.transport.send(
       0xe0,
       CHECK_PARTNER_COMMAND,
       0x00,
-      0x00,
+      transactionType,
       signatureOfPartnerData,
       this.allowedStatuses
     );
@@ -80,7 +89,11 @@ export default class Swap {
     maybeThrowProtocolError(result);
   }
 
-  async processTransaction(transaction: Buffer, fee: BigNumber): Promise<void> {
+  async processTransaction(
+    transactionType: TransactionType,
+    transaction: Buffer,
+    fee: BigNumber
+  ): Promise<void> {
     var hex: string = fee.toString(16);
     hex = hex.padStart(hex.length + (hex.length % 2), "0");
     var feeHex: Buffer = Buffer.from(hex, "hex");
@@ -96,7 +109,7 @@ export default class Swap {
       0xe0,
       PROCESS_TRANSACTION_RESPONSE,
       0x00,
-      0x00,
+      transactionType,
       bufferToSend,
       this.allowedStatuses
     );
@@ -104,12 +117,15 @@ export default class Swap {
     maybeThrowProtocolError(result);
   }
 
-  async checkTransactionSignature(transactionSignature: Buffer): Promise<void> {
+  async checkTransactionSignature(
+    transactionType: TransactionType,
+    transactionSignature: Buffer
+  ): Promise<void> {
     let result: Buffer = await this.transport.send(
       0xe0,
       CHECK_TRANSACTION_SIGNATURE,
       0x00,
-      0x00,
+      transactionType,
       transactionSignature,
       this.allowedStatuses
     );
@@ -117,6 +133,7 @@ export default class Swap {
   }
 
   async checkPayoutAddress(
+    transactionType: TransactionType,
     payoutCurrencyConfig: Buffer,
     currencyConfigSignature: Buffer,
     addressParameters: Buffer
@@ -139,9 +156,9 @@ export default class Swap {
 
     let result: Buffer = await this.transport.send(
       0xe0,
-      CHECK_PAYOUT_ADDRESS,
+      CHECK_PAYOUT_ADDRESS, // CHECK_ASSET_IN for SELL
       0x00,
-      0x00,
+      transactionType,
       bufferToSend,
       this.allowedStatuses
     );
@@ -180,12 +197,12 @@ export default class Swap {
     maybeThrowProtocolError(result);
   }
 
-  async signCoinTransaction(): Promise<void> {
+  async signCoinTransaction(transactionType: TransactionType): Promise<void> {
     let result: Buffer = await this.transport.send(
       0xe0,
       SIGN_COIN_TRANSACTION,
       0x00,
-      0x00,
+      transactionType,
       Buffer.alloc(0),
       this.allowedStatuses
     );
